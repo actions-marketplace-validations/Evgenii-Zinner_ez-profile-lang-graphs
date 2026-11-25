@@ -30,6 +30,14 @@ inputs:
     description: "Include private repositories (requires a PAT with repo read scope)"
     required: false
     default: "false"
+  domains:
+    description: "Comma-separated domains to include: Web, Mobile, Systems, Backend, Data & Ops, or Other"
+    required: false
+    default: ""
+  legend:
+    description: "Legend entries: languages (default) or domains"
+    required: false
+    default: "languages"
   output:
     description: "Output SVG file path"
     required: false

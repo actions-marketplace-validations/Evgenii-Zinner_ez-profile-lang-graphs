@@ -56,6 +56,8 @@ jobs:
           layout: sunburst
           theme: dark
           hide_border: true
+          domains: Web, Backend, Data & Ops
+          legend: languages
           output: top-langs.svg
 
       - name: Commit updated SVG if changed
@@ -100,6 +102,8 @@ Generate both `top-langs-dark.svg` (`theme: dark`) and `top-langs-light.svg` (`t
 | `theme` | `dark` or `light` | `dark` |
 | `hide_border` | Hide outer card border (`true` / `false`) | `true` |
 | `include_private` | Include private repositories (`true` / `false`) | `false` |
+| `domains` | Comma-separated domains to include: `Web`, `Mobile`, `Systems`, `Backend`, `Data & Ops`, `Other` | All 5 canonical domains; `Other` excluded |
+| `legend` | Legend entries: `languages` or `domains` | `languages` |
 | `output` | Output SVG file path | `top-langs.svg` |
 
 ## Domains

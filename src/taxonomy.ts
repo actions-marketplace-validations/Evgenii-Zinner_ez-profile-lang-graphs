@@ -31,6 +31,8 @@ export interface DomainScore {
   score: number;
 }
 
+export type IncludedDomain = DomainName | "Other";
+
 const LANGUAGE_DOMAIN: Record<string, DomainName> = {
   // Web
   TypeScript: "Web",
@@ -107,12 +109,29 @@ const LANGUAGE_DOMAIN: Record<string, DomainName> = {
  * Builds a 2-level hierarchy:
  *   Root ("Languages") -> Domain (Web / Mobile / Systems / Backend / Data & Ops / Other) -> Raw Language.
  */
-export function buildLanguageHierarchy(stats: RawLanguageStat[]): TreeNode {
+export function filterLanguagesByDomains(
+  stats: RawLanguageStat[],
+  includedDomains: readonly IncludedDomain[] = DOMAINS,
+): RawLanguageStat[] {
+  const included = new Set<IncludedDomain>(includedDomains);
+  return stats.filter((stat) => {
+    if (stat.bytes <= 0) return false;
+    const domain = LANGUAGE_DOMAIN[stat.name] ?? "Other";
+    return included.has(domain);
+  });
+}
+
+export function buildLanguageHierarchy(
+  stats: RawLanguageStat[],
+  includedDomains: readonly IncludedDomain[] = DOMAINS,
+): TreeNode {
   const domains = new Map<string, RawLanguageStat[]>();
+  const included = new Set<IncludedDomain>(includedDomains);
 
   for (const stat of stats) {
     if (stat.bytes <= 0) continue;
     const domainName = LANGUAGE_DOMAIN[stat.name] ?? "Other";
+    if (!included.has(domainName)) continue;
 
     let items = domains.get(domainName);
     if (!items) {
@@ -147,9 +166,12 @@ export function buildLanguageHierarchy(stats: RawLanguageStat[]): TreeNode {
  * Computes exact byte shares and power-scaled (share^0.35 normalized) scores
  * across the 5 canonical engineering domains for radar visualization.
  */
-export function computeDomainScores(stats: RawLanguageStat[]): DomainScore[] {
+export function computeDomainScores(
+  stats: RawLanguageStat[],
+  includedDomains: readonly DomainName[] = DOMAINS,
+): DomainScore[] {
   const domainBytes = new Map<DomainName, number>();
-  for (const domain of DOMAINS) {
+  for (const domain of includedDomains) {
     domainBytes.set(domain, 0);
   }
 
@@ -163,7 +185,7 @@ export function computeDomainScores(stats: RawLanguageStat[]): DomainScore[] {
     }
   }
 
-  const rawEntries = DOMAINS.map((domain) => {
+  const rawEntries = includedDomains.map((domain) => {
     const bytes = domainBytes.get(domain) ?? 0;
     const share = totalBytes > 0 ? bytes / totalBytes : 0;
     const raw = share > 0 ? share ** 0.35 : 0;

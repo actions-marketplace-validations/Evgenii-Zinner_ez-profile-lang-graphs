@@ -1,14 +1,23 @@
 import { type HierarchyNode, pack as d3Pack, treemap as d3Treemap, hierarchy } from "d3-hierarchy";
 import { arc as d3Arc } from "d3-shape";
-import { DOMAINS, type RawLanguageStat, type TreeNode, computeDomainScores } from "./taxonomy.js";
+import {
+  DOMAINS,
+  type DomainName,
+  type RawLanguageStat,
+  type TreeNode,
+  computeDomainScores,
+} from "./taxonomy.js";
 
 export type ThemeName = "dark" | "light";
 export type LayoutName = "radar" | "bubbles" | "sunburst" | "treemap";
+export type LegendName = "languages" | "domains";
 
 export interface RenderOptions {
   theme?: ThemeName;
   hideBorder?: boolean;
   layout?: LayoutName;
+  legend?: LegendName;
+  domains?: readonly DomainName[];
 }
 
 interface ThemePalette {
@@ -107,10 +116,35 @@ function renderDomainLegend(
     .join("\n  ");
 }
 
+function renderLanguageLegend(
+  languages: Array<{ name: string; bytes: number; color: string }>,
+  totalBytes: number,
+  theme: ThemePalette,
+  height: number,
+): string {
+  const topLanguages = languages.slice(0, 6);
+  const legendStartY = Math.max(32, Math.round((height - topLanguages.length * 38) / 2) + 18);
+
+  return topLanguages
+    .map((language, i) => {
+      const y = legendStartY + i * 38;
+      const pct = ((language.bytes / totalBytes) * 100).toFixed(1);
+      const delay = (0.15 + i * 0.09).toFixed(2);
+      return `<g transform="translate(274, ${y})"><g class="row" style="animation-delay:${delay}s">
+      <rect width="10" height="10" rx="3" y="-9" fill="${language.color || "#6e7681"}"/>
+      <text x="18" y="0" font-size="12.5" font-weight="600" fill="${theme.text}">${escapeXml(language.name)}</text>
+      <text x="242" y="0" text-anchor="end" font-size="12.5" font-weight="600" fill="${theme.title}">${pct}%</text>
+    </g></g>`;
+    })
+    .join("\n  ");
+}
+
 function renderRadarSvg(
   rawStats: RawLanguageStat[],
   theme: ThemePalette,
   hideBorder: boolean,
+  legend: LegendName = "languages",
+  domains: readonly DomainName[] = DOMAINS,
 ): string {
   const totalBytes = rawStats.reduce((sum, s) => sum + Math.max(0, s.bytes), 0);
   if (totalBytes === 0) {
@@ -123,7 +157,7 @@ function renderRadarSvg(
   const cy = 126;
   const R = 72;
   const stroke = hideBorder ? "none" : theme.border;
-  const scores = computeDomainScores(rawStats);
+  const scores = computeDomainScores(rawStats, domains);
 
   const axisAngles = scores.map((_, i) => -Math.PI / 2 + (i * 2 * Math.PI) / 5);
 
@@ -199,20 +233,36 @@ function renderRadarSvg(
     })
     .join("\n    ");
 
-  const topLangs = [...rawStats]
-    .filter((s) => s.bytes > 0)
-    .sort((a, b) => b.bytes - a.bytes)
-    .slice(0, 6);
+  const legendEntries =
+    legend === "domains"
+      ? [...scores]
+          .filter((score) => score.bytes > 0)
+          .sort((a, b) => b.bytes - a.bytes)
+          .slice(0, 6)
+          .map((score) => ({
+            name: score.domain,
+            bytes: score.bytes,
+            color: score.color,
+          }))
+      : [...rawStats]
+          .filter((stat) => stat.bytes > 0)
+          .sort((a, b) => b.bytes - a.bytes)
+          .slice(0, 6)
+          .map((stat) => ({
+            name: stat.name,
+            bytes: stat.bytes,
+            color: stat.color || "#6e7681",
+          }));
 
-  const startY = Math.round((height - (topLangs.length - 1) * 28) / 2) + 4;
-  const langRows = topLangs
-    .map((lang, i) => {
+  const startY = Math.round((height - (legendEntries.length - 1) * 28) / 2) + 4;
+  const langRows = legendEntries
+    .map((entry, i) => {
       const y = startY + i * 28;
-      const pct = ((lang.bytes / totalBytes) * 100).toFixed(1);
+      const pct = ((entry.bytes / totalBytes) * 100).toFixed(1);
       const delay = (0.14 + i * 0.07).toFixed(2);
       return `<g transform="translate(304, ${y})"><g class="row" style="animation-delay:${delay}s">
-      <circle cx="5" cy="-4" r="4.5" fill="${lang.color || "#6e7681"}"/>
-      <text x="17" y="0" font-size="12" font-weight="600" fill="${theme.text}">${escapeXml(lang.name)}</text>
+      <circle cx="5" cy="-4" r="4.5" fill="${entry.color}"/>
+      <text x="17" y="0" font-size="12" font-weight="600" fill="${theme.text}">${escapeXml(entry.name)}</text>
       <text x="212" y="0" text-anchor="end" font-size="12" font-weight="600" fill="${theme.title}">${pct}%</text>
     </g></g>`;
     })
@@ -250,7 +300,13 @@ function renderRadarSvg(
 </svg>`;
 }
 
-function renderBubblesSvg(rootData: TreeNode, theme: ThemePalette, hideBorder: boolean): string {
+function renderBubblesSvg(
+  rootData: TreeNode,
+  rawStats: RawLanguageStat[],
+  theme: ThemePalette,
+  hideBorder: boolean,
+  legend: LegendName,
+): string {
   const width = 540;
   const height = 240;
   const stroke = hideBorder ? "none" : theme.border;
@@ -300,7 +356,22 @@ function renderBubblesSvg(rootData: TreeNode, theme: ThemePalette, hideBorder: b
     })
     .join("\n    ");
 
-  const legend = renderDomainLegend(packed.children ?? [], totalBytes, theme, height);
+  const legendMarkup =
+    legend === "languages"
+      ? renderLanguageLegend(
+          [...rawStats]
+            .filter((stat) => stat.bytes > 0)
+            .sort((a, b) => b.bytes - a.bytes)
+            .map((stat) => ({
+              name: stat.name,
+              bytes: stat.bytes,
+              color: stat.color || "#6e7681",
+            })),
+          totalBytes,
+          theme,
+          height,
+        )
+      : renderDomainLegend(packed.children ?? [], totalBytes, theme, height);
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
   <style>
@@ -321,7 +392,7 @@ function renderBubblesSvg(rootData: TreeNode, theme: ThemePalette, hideBorder: b
     ${domainCircles}
     ${leafBubbles}
   </g>
-  ${legend}
+  ${legendMarkup}
 </svg>`;
 }
 
@@ -439,12 +510,14 @@ export function renderLanguageChartSvg(
   const theme = THEMES[options.theme ?? "dark"] ?? THEMES.dark;
   const hideBorder = options.hideBorder ?? false;
   const layout = options.layout ?? "sunburst";
+  const legend = options.legend ?? "languages";
+  const domains = options.domains ?? DOMAINS;
 
   if (layout === "radar") {
-    return renderRadarSvg(rawStats, theme, hideBorder);
+    return renderRadarSvg(rawStats, theme, hideBorder, legend, domains);
   }
   if (layout === "bubbles") {
-    return renderBubblesSvg(rootData, theme, hideBorder);
+    return renderBubblesSvg(rootData, rawStats, theme, hideBorder, legend);
   }
   if (layout === "treemap") {
     return renderTreemapSvg(rootData, theme, hideBorder);
@@ -606,7 +679,22 @@ export function renderLanguageChartSvg(
   }
 
   const sortedLegendDomains = [...activeDomains].sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
-  const legend = renderDomainLegend(sortedLegendDomains, totalBytes, theme, height);
+  const legendMarkup =
+    legend === "languages"
+      ? renderLanguageLegend(
+          [...rawStats]
+            .filter((stat) => stat.bytes > 0)
+            .sort((a, b) => b.bytes - a.bytes)
+            .map((stat) => ({
+              name: stat.name,
+              bytes: stat.bytes,
+              color: stat.color || "#6e7681",
+            })),
+          totalBytes,
+          theme,
+          height,
+        )
+      : renderDomainLegend(sortedLegendDomains, totalBytes, theme, height);
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
   <style>
@@ -634,6 +722,6 @@ export function renderLanguageChartSvg(
     ${domainPaths.join("\n    ")}
     ${petalPaths.join("\n    ")}
   </g>
-  ${legend}
+  ${legendMarkup}
 </svg>`;
 }
